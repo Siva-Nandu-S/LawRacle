@@ -1,4 +1,4 @@
-import 'package:article_21/pages/IPFS_TEST.dart';
+import 'package:article_21/blockchain/IPFS_TEST.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:article_21/providers/wallet_provider.dart';
