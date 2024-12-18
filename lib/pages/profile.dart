@@ -32,6 +32,7 @@ class _ProfileState extends State<Profile> {
 
     print('Name: $name');
     print('Email: $email');
+    print(prefs.getString('privateKey'));
     
   }
 

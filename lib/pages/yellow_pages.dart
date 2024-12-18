@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:article_21/blockchain/upload_to_ipfs.dart';
 
 class YellowPages extends StatefulWidget {
   const YellowPages({Key? key}) : super(key: key);
@@ -47,9 +48,14 @@ class _YellowPagesState extends State<YellowPages> {
     print('Starting chat with $lawyerEmail');
   }
 
-  void _handleSendDocument(String lawyerEmail) {
+  void _handleSendDocument(String publicKey) {
     // Implement your send document functionality here
-    print('Sending document to $lawyerEmail');
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PinataUploadPage(lawyerPublicKeyPem: publicKey),
+      ),
+    );
   }
 
   @override
@@ -107,7 +113,7 @@ class _YellowPagesState extends State<YellowPages> {
                             ),
                             const SizedBox(width: 10),
                             ElevatedButton(
-                              onPressed: () => _handleSendDocument(lawyer['email']),
+                              onPressed: () => _handleSendDocument(lawyer['public_key']),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.green,
                               ),
