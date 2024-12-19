@@ -50,6 +50,8 @@ dependencies:
   permission_handler: ^10.0.0
   encrypt: ^5.0.3
   basic_utils: ^5.6.0
+  pointycastle: ^3.6.1
+  convert: ^3.0.1
 
 dev_dependencies:
   flutter_test:

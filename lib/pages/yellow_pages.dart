@@ -61,10 +61,6 @@ class _YellowPagesState extends State<YellowPages> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Yellow Pages'),
-        backgroundColor: Colors.indigo,
-      ),
       body: FutureBuilder<List<Map<String, dynamic>>>(
         future: _lawyersFuture,
         builder: (context, snapshot) {

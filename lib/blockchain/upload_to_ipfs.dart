@@ -9,11 +9,11 @@ import 'package:http/http.dart' as http;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
-
 class PinataUploadPage extends StatefulWidget {
   final String lawyerPublicKeyPem;
 
-  const PinataUploadPage({Key? key, required this.lawyerPublicKeyPem}): super(key: key);
+  const PinataUploadPage({Key? key, required this.lawyerPublicKeyPem})
+      : super(key: key);
 
   @override
   _PinataUploadPageState createState() => _PinataUploadPageState();
@@ -23,13 +23,20 @@ class _PinataUploadPageState extends State<PinataUploadPage> {
   String? _uploadedFileUrl;
   bool _isUploading = false;
 
-  void initState() async{
+  @override
+  void initState() {
     super.initState();
+    _loadEnvironment();
+  }
+
+// New method for loading the environment asynchronously
+  Future<void> _loadEnvironment() async {
     await dotenv.load();
   }
 
   // Replace with your Pinata JWT
-  final String? _pinataJwt = dotenv.env['PINATA_JWT']; // Make sure to replace this with your actual JWT.
+  final String? _pinataJwt = dotenv
+      .env['PINATA_JWT']; // Make sure to replace this with your actual JWT.
 
   Future<void> _pickFileAndUpload() async {
     // Request permission for external storage
@@ -37,6 +44,7 @@ class _PinataUploadPageState extends State<PinataUploadPage> {
 
     if (status.isGranted) {
       try {
+        // Step 1: Pick the file
         FilePickerResult? result = await FilePicker.platform.pickFiles();
         if (result != null && result.files.single.path != null) {
           File file = File(result.files.single.path!);
@@ -45,14 +53,31 @@ class _PinataUploadPageState extends State<PinataUploadPage> {
             _isUploading = true;
           });
 
+          // Step 2: Encrypt the file before uploading
+          Map<String, dynamic> encryptedData =
+              await encryptFileWithAccessControl(
+            file,
+            widget.lawyerPublicKeyPem,
+          );
+
+          Uint8List encryptedFileBytes = encryptedData['encryptedFile'];
+          String encryptedAESKey = encryptedData['encryptedAESKey'];
+
+          // Save the encrypted file temporarily
+          String tempPath = '${file.path}_encrypted';
+          File encryptedFile =
+              await File(tempPath).writeAsBytes(encryptedFileBytes);
+
+          // Step 3: Upload the encrypted file to IPFS
           String url = "https://api.pinata.cloud/pinning/pinFileToIPFS";
           var request = http.MultipartRequest('POST', Uri.parse(url));
 
           // Adding headers
           request.headers['Authorization'] = 'Bearer $_pinataJwt';
 
-          // Adding the file to the request
-          request.files.add(await http.MultipartFile.fromPath('file', file.path));
+          // Adding the encrypted file to the request
+          request.files.add(
+              await http.MultipartFile.fromPath('file', encryptedFile.path));
 
           var response = await request.send();
           var responseData = await http.Response.fromStream(response);
@@ -61,22 +86,39 @@ class _PinataUploadPageState extends State<PinataUploadPage> {
           if (response.statusCode == 200) {
             var jsonResponse = jsonDecode(responseData.body);
 
-            // Check if the IpfsHash exists in the response
+            // Step 4: Check if the IpfsHash exists in the response
             if (jsonResponse.containsKey('IpfsHash')) {
               String ipfsHash = jsonResponse['IpfsHash'];
-              encryptFile(ipfsHash, widget.lawyerPublicKeyPem!).then((encryptedIpfsHash) {
-                print('Encrypted IPFS Hash: $encryptedIpfsHash');
-                setState(() {
-                  _uploadedFileUrl = ipfsHash;
-                  _isUploading = false;
-                });
+
+              // Step 5: Encrypt the IPFS hash with the lawyer's public key
+              // String encryptedIpfsHash = await encryptWithPublicKey(
+              //     ipfsHash, widget.lawyerPublicKeyPem);
+
+              // Step 6: Upload the encrypted AES key and encrypted IPFS hash to the blockchain
+              await uploadToBlockchain(
+                  ipfsHash, encryptedAESKey, widget.lawyerPublicKeyPem);
+
+              setState(() {
+                _uploadedFileUrl = ipfsHash;
+                _isUploading = false;
               });
-              Navigator.push(context, MaterialPageRoute(builder: (context) => YellowPages()));
+
+              // Navigate to the YellowPages page
+              Navigator.push(context,
+                  MaterialPageRoute(builder: (context) => YellowPages()));
             }
+          } else {
+            print('Failed to upload file to IPFS: ${responseData.body}');
+            setState(() {
+              _isUploading = false;
+            });
           }
         }
       } catch (e) {
         print('Error: $e');
+        setState(() {
+          _isUploading = false;
+        });
       }
     }
   }

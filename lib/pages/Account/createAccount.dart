@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:article_21/article_21.dart';
+import 'package:article_21/blockchain/user_encryption.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -75,19 +76,12 @@ class _CreateAccountState extends State<CreateAccount> {
       return;
     }
 
-    String walletAddress = '';
+    String publicKey = '';
 
     final walletProvider = Provider.of<WalletProvider>(context, listen: false);
     final privateKey = await walletProvider.getPrivateKey(mnemonic);
 
-    if (privateKey != null) {
-      final walletProvider = WalletProvider();
-      await walletProvider.loadPrivateKey();
-      EthereumAddress address = await walletProvider.getPublicKey(privateKey);
-      setState(() {
-        walletAddress = address.hex;
-      });
-    }
+    publicKey = derivePublicKeyFromPrivateKey(privateKey);
 
     if (privateKey.isNotEmpty) {
       _showSnackBar('Private key stored successfully');
@@ -96,7 +90,7 @@ class _CreateAccountState extends State<CreateAccount> {
       String apiUrl = dotenv.env['SERVER_URL']!;
 
       print(privateKey);
-      print(walletAddress);
+      print(publicKey);
 
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('privateKey', privateKey);
@@ -111,7 +105,7 @@ class _CreateAccountState extends State<CreateAccount> {
           'email': _emailController.text,
           'password': _passwordController.text,
           'gender': selectedGender,
-          'publicKey': walletAddress,
+          'publicKey': publicKey,
         }),
       );
 
@@ -119,6 +113,8 @@ class _CreateAccountState extends State<CreateAccount> {
         prefs.setString('email', _emailController.text);  
         prefs.setString('name', _usernameController.text);
         prefs.setString('gender', selectedGender);
+
+        Navigator.pop(context);
 
         Navigator.push(
             context, MaterialPageRoute(builder: (context) => Article21()));
