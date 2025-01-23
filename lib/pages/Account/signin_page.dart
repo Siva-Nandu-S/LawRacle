@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:article_21/article_21.dart';
+import 'package:article_21/blockchain/user_encryption.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -78,6 +79,8 @@ class _SignInState extends State<SignIn> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('privateKey', privateKey);
 
+      String publicKey = derivePublicKeyFromPrivateKey(privateKey);
+
       final response = await http.post(
         Uri.parse('$apiUrl/login'),
         headers: <String, String>{
@@ -86,7 +89,7 @@ class _SignInState extends State<SignIn> {
         body: jsonEncode(<String, String>{
           'email': _emailController.text,
           'password': _passwordController.text,
-          'publicKey': walletAddress,
+          'publicKey': publicKey,
         }),
       );
 
@@ -99,7 +102,7 @@ class _SignInState extends State<SignIn> {
         final responseBody = jsonDecode(response.body);
         prefs.setString('name', responseBody['name']);
         prefs.setString('gender', responseBody['gender']);
-        
+        Navigator.pop(context);
         Navigator.push(
             context, MaterialPageRoute(builder: (context) => Article21()));
       } else {

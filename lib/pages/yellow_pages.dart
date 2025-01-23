@@ -48,12 +48,12 @@ class _YellowPagesState extends State<YellowPages> {
     print('Starting chat with $lawyerEmail');
   }
 
-  void _handleSendDocument(String publicKey) {
+  void _handleSendDocument(String publicKey, String email) {
     // Implement your send document functionality here
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => PinataUploadPage(lawyerPublicKeyPem: publicKey),
+        builder: (context) => PinataUploadPage(lawyerPublicKeyHex: publicKey, lawyerEmail: email),
       ),
     );
   }
@@ -109,7 +109,7 @@ class _YellowPagesState extends State<YellowPages> {
                             ),
                             const SizedBox(width: 10),
                             ElevatedButton(
-                              onPressed: () => _handleSendDocument(lawyer['public_key']),
+                              onPressed: () => _handleSendDocument(lawyer['public_key'], lawyer['email']),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.green,
                               ),

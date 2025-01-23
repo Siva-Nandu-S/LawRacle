@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:encrypt/encrypt.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:encrypt/encrypt.dart' as encrypt;
@@ -11,6 +12,7 @@ import 'package:basic_utils/basic_utils.dart'; // For key conversion utilities
 import 'dart:typed_data';
 import 'package:convert/convert.dart';
 import 'package:pointycastle/export.dart';
+import 'package:web3dart/crypto.dart';
 import 'package:web3dart/web3dart.dart';
 
 /// Derives the public key from the provided private key in hexadecimal format.
@@ -31,13 +33,26 @@ String derivePublicKeyFromPrivateKey(String privateKeyHex) {
 }
 
 /// Encrypts the provided data using the provided public key.
-
 String convertPublicKeyToPEM(String uncompressedPublicKeyHex) {
+  print('length of public key: ${uncompressedPublicKeyHex.length}');
+
+  // Validate and remove the 0x04 prefix if present
+  if (uncompressedPublicKeyHex.startsWith('04')) {
+    uncompressedPublicKeyHex =
+        uncompressedPublicKeyHex.substring(2); // Remove '04'
+  }
+
+  // Ensure the length is exactly 128 characters (64 bytes)
+  if (uncompressedPublicKeyHex.length != 128) {
+    throw FormatException(
+        'Invalid public key length: ${uncompressedPublicKeyHex.length}');
+  }
+
   // Convert the hex string to bytes
   Uint8List publicKeyBytes =
       Uint8List.fromList(_hexToBytes(uncompressedPublicKeyHex));
 
-  // ASN.1 DER encoding header for an uncompressed SECP256k1 public key
+  // ASN.1 DER encoding header for uncompressed SECP256k1 public key
   List<int> asn1Header = [
     0x30, 0x56, // SEQUENCE
     0x30, 0x10, // SEQUENCE
@@ -60,6 +75,8 @@ String convertPublicKeyToPEM(String uncompressedPublicKeyHex) {
       base64Key, 64); // Format with line breaks every 64 characters
   pemKey += '\n-----END PUBLIC KEY-----';
 
+  print('PEM Public Key: $pemKey');
+
   return pemKey;
 }
 
@@ -78,31 +95,73 @@ String _chunkString(String str, int chunkSize) {
   return exp.allMatches(str).map((m) => m.group(0)).join('\n');
 }
 
-// Function to encrypt the file using AES and encrypt the AES key with RSA
+// Function to encrypt the file with AES and encrypt the AES key with the receiver's public key (ECC)
 Future<Map<String, dynamic>> encryptFileWithAccessControl(
-    File file, String lawyerPublicKeyPem) async {
+    File file, String lawyerPublicKeyHex) async {
+  print("\n\n");
+  print(lawyerPublicKeyHex);
+
   // 1. Read the file contents
   Uint8List fileBytes = await file.readAsBytes();
 
-  // 2. Generate a random AES key
+  // 2. Generate a random AES key and IV
   final aesKey = Key.fromSecureRandom(32); // 256-bit AES key
-  final encrypter = Encrypter(AES(aesKey));
+  final iv = IV.fromSecureRandom(16); // 16-byte IV
+
+  final encrypter = Encrypter(AES(aesKey, mode: AESMode.cbc)); // CBC Mode
 
   // 3. Encrypt the file with AES
-  final encryptedFile = encrypter.encryptBytes(fileBytes);
+  final encryptedFile = encrypter.encryptBytes(fileBytes, iv: iv);
 
-  // 4. Load the lawyer's public key (PEM)
-  final parser = RSAKeyParser();
-  final rsaPublicKey = parser.parse(lawyerPublicKeyPem) as RSAPublicKey;
+  // 4. Load the lawyer's public key (secp256k1) in hex
+  final publicKeyBytes = _hexToBytes(lawyerPublicKeyHex);
+  print(publicKeyBytes);
+  final ecDomainParameters = ECCurve_secp256k1();
+  print(ecDomainParameters);
+  final pubKey = ecDomainParameters.curve
+      .decodePoint(publicKeyBytes); // Decoding the secp256k1 public key
+  print(pubKey);
 
-  // 5. Encrypt the AES key with the lawyer's public key
-  final rsaEncrypter = Encrypter(RSA(publicKey: rsaPublicKey));
-  final encryptedAESKey = rsaEncrypter.encryptBytes(aesKey.bytes);
+// Convert ECPoint to ECPublicKey
+  final ecParams = ECDomainParameters('secp256k1');
+  final ecpubKey = ECPublicKey(pubKey!, ecParams);
+  print(ecpubKey);
 
+// Encrypt the AES key with the ECC public key
+  final encryptedAESKey = _encryptAESKeyWithECC(aesKey.bytes, ecpubKey);
+
+  // 7. Return encrypted data along with CID and IV for decryption later
   return {
-    'encryptedFile': encryptedFile.bytes,
-    'encryptedAESKey': encryptedAESKey.base64,
+    'encryptedFile': encryptedFile.base64, // Return as Base64 string
+    'encryptedAESKey': encryptedAESKey, // Base64 or raw encrypted AES key
+    'iv': iv, // Store IV for decryption
   };
+}
+
+// Encrypt the AES key using the secp256k1 public key (ECC)
+String _encryptAESKeyWithECC(Uint8List aesKey, ECPublicKey publicKey) {
+  // Get curve parameters for secp256k1
+  final domainParams = ECDomainParameters('secp256k1');
+
+  // Generate an ephemeral private key for ECDH
+  final secureRandom = FortunaRandom();
+  secureRandom
+      .seed(KeyParameter(Uint8List.fromList(List.generate(32, (i) => i))));
+  final privateKey =
+      ECPrivateKey(BigInt.from(secureRandom.nextUint16()), domainParams);
+
+  // Compute shared secret using ECDH
+  final sharedSecret = (publicKey.Q! * privateKey.d!)!.getEncoded(false);
+
+  // Derive key material using shared secret
+  final derivedKey = sharedSecret.sublist(
+      0, 32); // Use the first 32 bytes for AES key encryption
+
+  // XOR the AES key with derived key (simple symmetric encryption for demonstration purposes)
+  final encryptedAESKey =
+      List<int>.generate(aesKey.length, (i) => aesKey[i] ^ derivedKey[i]);
+
+  return base64.encode(encryptedAESKey); // Return Base64-encoded AES key
 }
 
 /// Encrypts the given data with the provided public key in PEM format.
@@ -134,18 +193,30 @@ RSAPublicKey _parsePublicKeyFromPem(String pem) {
 /// Uploads the IPFS hash, encrypted AES key, and recipient's public key to the blockchain.
 
 Future<void> uploadToBlockchain(
-    String ipfsHash, String encryptedAESKey, String lawyerPublicKey) async {
+    String ipfsHash, String encryptedAESKey, String lawyerPublicKeyHex) async {
   try {
     // Load private key from SharedPreferences
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    String privateKey = prefs.getString('privateKey') ?? '';
+    // SharedPreferences prefs = await SharedPreferences.getInstance();
+    // String privateKey = prefs.getString('privateKey') ?? '';
+    // if (privateKey.isEmpty) {
+    //   throw Exception("Private key not found in SharedPreferences.");
+    // }
+
+    // Load private key from .env file
+    await dotenv.load();
+    print("Loaded .env file");
+
+    // Private key for the sender (for demonstration purposes)
+    String privateKey = dotenv.env['MY_PERSONAL_PRIVAT_KEY']!;
+    print("Private Key: $privateKey");
 
     // Infura endpoint (Sepolia testnet)
-    const String rpcUrl = 'https://sepolia.infura.io/v3/fbf0b92dd7e948f392a2e226abba3d1e'; // Replace with your Infura URL
+    const String rpcUrl =
+        'https://sepolia.infura.io/v3/fbf0b92dd7e948f392a2e226abba3d1e';
 
     // Deployed smart contract address
-    final EthereumAddress contractAddress =
-        EthereumAddress.fromHex('0xb46a1c09dd18c3283a786c6fbffc10f30bc74fc8'); // Replace with your contract address
+    final EthereumAddress contractAddress = EthereumAddress.fromHex(
+        '0xb46a1c09dd18c3283a786c6fbffc10f30bc74fc8'); // Smart contract address
 
     // Load ABI of the contract
     const String abi = '''
@@ -169,13 +240,22 @@ Future<void> uploadToBlockchain(
 
     // Load credentials
     final credentials = EthPrivateKey.fromHex(privateKey);
+    print("Credentials: $credentials");
 
     // Parse the contract
-    final contract =
-        DeployedContract(ContractAbi.fromJson(abi, 'AccessControlIPFS'), contractAddress);
+    final contract = DeployedContract(
+        ContractAbi.fromJson(abi, 'AccessControlIPFS'), contractAddress);
 
     // Get the uploadFile function
     final function = contract.function('uploadFile');
+
+    // Convert lawyer's public key to Ethereum address
+    String recipientAddress = deriveEthereumAddress(lawyerPublicKeyHex);
+    print("Recipient Ethereum Address: $recipientAddress");
+
+    // Estimate gas price
+    final gasPrice = await client.getGasPrice();
+    print('Estimated Gas Price: ${gasPrice.getInWei} wei');
 
     // Send the transaction
     final transactionHash = await client.sendTransaction(
@@ -183,7 +263,12 @@ Future<void> uploadToBlockchain(
       Transaction.callContract(
         contract: contract,
         function: function,
-        parameters: [ipfsHash, encryptedAESKey, EthereumAddress.fromHex(lawyerPublicKey)],
+        parameters: [
+          ipfsHash,
+          encryptedAESKey,
+          EthereumAddress.fromHex(recipientAddress),
+        ],
+        maxGas: 1000000, // Max gas limit
       ),
       chainId: 11155111, // Sepolia testnet chain ID
     );
@@ -195,3 +280,22 @@ Future<void> uploadToBlockchain(
     print('Blockchain upload error: $e');
   }
 }
+
+// Function to derive Ethereum address from public key
+String deriveEthereumAddress(String publicKeyHex) {
+  Uint8List publicKeyBytes = Uint8List.fromList(hexDecode(publicKeyHex));
+  Uint8List keccakHash = keccak256(publicKeyBytes.sublist(1)); // Remove the 0x04 prefix
+  Uint8List addressBytes = keccakHash.sublist(keccakHash.length - 20);
+  return '0x${hexEncode(addressBytes)}';
+}
+
+Uint8List hexDecode(String hex) {
+  hex = hex.startsWith('0x') ? hex.substring(2) : hex;
+  return Uint8List.fromList(List.generate(hex.length ~/ 2,
+      (i) => int.parse(hex.substring(i * 2, i * 2 + 2), radix: 16)));
+}
+
+String hexEncode(Uint8List bytes) {
+  return bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+}
+

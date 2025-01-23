@@ -1,4 +1,6 @@
 import 'package:article_21/pages/AI%20BOT/ChatBot.dart';
+import 'package:article_21/pages/components/AI_Chat_Bot.dart';
+import 'package:article_21/pages/components/shared_documents.dart';
 import 'package:flutter/material.dart';
 import 'package:article_21/pages/home.dart';
 import 'package:article_21/pages/profile.dart';
@@ -72,10 +74,12 @@ class _Article21State extends State<Article21> {
             } else {
               return IndexedStack(
                 index: currentPageIndex,
-                children: const [
-                  Home(),
-                  Profile(),
-                  YellowPages(),
+                children: [
+                  const Home(),
+                  const Profile(),
+                  const YellowPages(),
+                  AIChatBot(),
+                  SharedDocuments()
                 ],
               );
             }
@@ -124,6 +128,14 @@ class MyBottomNavigationBar extends StatelessWidget {
         NavigationDestination(
           icon: Image(image: AssetImage('assets/images/pages.png'), width: 30),
           label: 'Yellow Pages',
+        ),
+        NavigationDestination(
+          icon: Image(image: AssetImage('assets/images/ai.png'), width: 30),
+          label: 'A I',
+        ),
+        NavigationDestination(
+          icon: Image(image: AssetImage('assets/images/files.png'), width: 30),
+          label: 'Files',
         ),
       ],
     );

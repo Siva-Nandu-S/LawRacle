@@ -1,4 +1,5 @@
 import 'package:article_21/blockchain/IPFS_TEST.dart';
+import 'package:article_21/blockchain/user_encryption.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:article_21/providers/wallet_provider.dart';
@@ -15,6 +16,7 @@ class _HomeState extends State<Home> {
   String walletAddress = '';
   String pvKey = '';
   String query = '';
+  String publicKey = '';
 
   @override
   void initState() {
@@ -33,6 +35,8 @@ class _HomeState extends State<Home> {
         walletAddress = address.hex;
         pvKey = privateKey;
       });
+
+      publicKey = derivePublicKeyFromPrivateKey(privateKey);
     }
   }
 
@@ -48,14 +52,14 @@ class _HomeState extends State<Home> {
             Column(
               children: <Widget>[
                 const Text(
-                  'Wallet Address: ',
+                  'Public Key: ',
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 Text(
-                  walletAddress,
+                  publicKey,
                   style: const TextStyle(
                     fontSize: 12,
                   ),

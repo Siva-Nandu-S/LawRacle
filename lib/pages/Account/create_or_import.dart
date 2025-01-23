@@ -99,7 +99,7 @@ class CreateOrImportPage extends StatelessWidget {
             Container(
               alignment: Alignment.center,
               child: const Text(
-                '© 2024 NUS. All rights reserved.',
+                '© 2024 JRSS. All rights reserved.',
                 style: TextStyle(
                   fontSize: 12.0,
                   color: Colors.grey,

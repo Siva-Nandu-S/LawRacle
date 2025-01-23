@@ -33,6 +33,7 @@ class _ProfileState extends State<Profile> {
     print('Name: $name');
     print('Email: $email');
     print(prefs.getString('privateKey'));
+    print(prefs.getString('email'));
     
   }
 
@@ -85,6 +86,7 @@ class _ProfileState extends State<Profile> {
                   SharedPreferences.getInstance().then((prefs) {
                     prefs.remove('isLoggedIn');
                     prefs.remove('privateKey');
+                    prefs.remove('email');
                     Navigator.push(context, MaterialPageRoute(builder: (context) => const CreateOrImportPage()));
                   });
                 },

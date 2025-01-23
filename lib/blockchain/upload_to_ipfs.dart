@@ -1,18 +1,22 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:article_21/article_21.dart';
 import 'package:article_21/blockchain/user_encryption.dart';
 import 'package:article_21/pages/yellow_pages.dart';
+import 'package:encrypt/encrypt.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/services.dart'; // Import for clipboard
 import 'package:http/http.dart' as http;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class PinataUploadPage extends StatefulWidget {
-  final String lawyerPublicKeyPem;
+  final String lawyerPublicKeyHex;
+  final String lawyerEmail;
 
-  const PinataUploadPage({Key? key, required this.lawyerPublicKeyPem})
+  const PinataUploadPage({key, required this.lawyerPublicKeyHex, required this.lawyerEmail})
       : super(key: key);
 
   @override
@@ -37,6 +41,8 @@ class _PinataUploadPageState extends State<PinataUploadPage> {
   // Replace with your Pinata JWT
   final String? _pinataJwt = dotenv
       .env['PINATA_JWT']; // Make sure to replace this with your actual JWT.
+  
+  final String? _serverUrl = dotenv.env['SERVER_URL'];
 
   Future<void> _pickFileAndUpload() async {
     // Request permission for external storage
@@ -53,20 +59,30 @@ class _PinataUploadPageState extends State<PinataUploadPage> {
             _isUploading = true;
           });
 
+          print('public key: ${widget.lawyerPublicKeyHex}');
+          print('length of public key: ${widget.lawyerPublicKeyHex.length}');
+
+          // String _PEMLawyerPublicKey =
+          //     convertPublicKeyToPEM(widget.lawyerPublicKeyHex);
+
           // Step 2: Encrypt the file before uploading
           Map<String, dynamic> encryptedData =
               await encryptFileWithAccessControl(
             file,
-            widget.lawyerPublicKeyPem,
+            widget.lawyerPublicKeyHex,
           );
+          print(widget.lawyerPublicKeyHex);
 
-          Uint8List encryptedFileBytes = encryptedData['encryptedFile'];
-          String encryptedAESKey = encryptedData['encryptedAESKey'];
+          String encryptedFileBase64 = encryptedData['encryptedFile'];
+          Uint8List encryptedFileBytes = base64Decode(encryptedFileBase64); // Decode Base64 to Uint8List
+          String encryptedAESKey = encryptedData['encryptedAESKey']; // Assuming this is already Base64
+          final iv = encryptedData['iv'];
 
           // Save the encrypted file temporarily
           String tempPath = '${file.path}_encrypted';
-          File encryptedFile =
-              await File(tempPath).writeAsBytes(encryptedFileBytes);
+          File encryptedFile = await File(tempPath).writeAsBytes(encryptedFileBytes);
+
+          print('Encrypted file saved at: $tempPath');
 
           // Step 3: Upload the encrypted file to IPFS
           String url = "https://api.pinata.cloud/pinning/pinFileToIPFS";
@@ -90,13 +106,16 @@ class _PinataUploadPageState extends State<PinataUploadPage> {
             if (jsonResponse.containsKey('IpfsHash')) {
               String ipfsHash = jsonResponse['IpfsHash'];
 
+              await serverCaching(
+                  widget.lawyerEmail, widget.lawyerPublicKeyHex, ipfsHash, _serverUrl!, encryptedAESKey, iv);
+
               // Step 5: Encrypt the IPFS hash with the lawyer's public key
               // String encryptedIpfsHash = await encryptWithPublicKey(
               //     ipfsHash, widget.lawyerPublicKeyPem);
 
               // Step 6: Upload the encrypted AES key and encrypted IPFS hash to the blockchain
               await uploadToBlockchain(
-                  ipfsHash, encryptedAESKey, widget.lawyerPublicKeyPem);
+                  ipfsHash, encryptedAESKey, widget.lawyerPublicKeyHex);
 
               setState(() {
                 _uploadedFileUrl = ipfsHash;
@@ -105,7 +124,7 @@ class _PinataUploadPageState extends State<PinataUploadPage> {
 
               // Navigate to the YellowPages page
               Navigator.push(context,
-                  MaterialPageRoute(builder: (context) => YellowPages()));
+                  MaterialPageRoute(builder: (context) => Article21()));
             }
           } else {
             print('Failed to upload file to IPFS: ${responseData.body}');
@@ -116,6 +135,7 @@ class _PinataUploadPageState extends State<PinataUploadPage> {
         }
       } catch (e) {
         print('Error: $e');
+        print('I am over here');
         setState(() {
           _isUploading = false;
         });
@@ -153,4 +173,34 @@ class _PinataUploadPageState extends State<PinataUploadPage> {
       ),
     );
   }
+}
+
+serverCaching(String lawyerEmail, String lawyerPublicKeyHex, String ipfsHash, String _serverUrl, String encryptedAESKey, IV iv) async {
+
+
+  try {
+    final response = await http.post(
+      Uri.parse('$_serverUrl/cacheFiles'),
+      headers: <String, String>{
+        'Content-Type': 'application/json; charset=UTF-8',
+      },
+      body: jsonEncode(<String, String>{
+        'lawyerEmail': lawyerEmail,
+        'lawyerPublicKey': lawyerPublicKeyHex,
+        'ipfsHash': ipfsHash,
+        'encryptedAESKey': encryptedAESKey,
+        'iv': iv.base64,
+      }),
+    );
+
+    if (response.statusCode == 200) {
+      print('Successfully cached data');
+    } else {
+      throw Exception('Failed to cache data');
+    }
+  } catch (e) {
+    print('Error: $e');
+    throw Exception('Error: $e');
+  }
+
 }
