@@ -19,6 +19,12 @@ class _LawyersPageState extends State<LawyersPage> {
   final TextEditingController _cityController = TextEditingController();
   final TextEditingController _districtController = TextEditingController();
   final TextEditingController _stateController = TextEditingController();
+  
+  // Form key for validation
+  final _formKey = GlobalKey<FormState>();
+  
+  // Loading state
+  bool _isLoading = false;
 
   // Dispose controllers to avoid memory leaks
   @override
@@ -33,20 +39,32 @@ class _LawyersPageState extends State<LawyersPage> {
   }
 
   Future<void> initiateDataEntry() async {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+    
+    setState(() {
+      _isLoading = true;
+    });
 
-    await dotenv.load();
-    final apiUrl = dotenv.env['SERVER_URL'];
+    try {
+      await dotenv.load();
+      final apiUrl = dotenv.env['SERVER_URL'];
 
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    String? email = prefs.getString('email');
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? email = prefs.getString('email');
 
-    final response = await http.post(
+      if (email == null) {
+        throw Exception('Email not found in local storage');
+      }
+
+      final response = await http.post(
         Uri.parse('$apiUrl/lawyers/data'),
         headers: <String, String>{
           'Content-Type': 'application/json; charset=UTF-8'
         },
         body: jsonEncode(<String, String>{
-          'email': email!,
+          'email': email,
           'speciality': _specialityController.text,
           'experience': _experienceController.text,
           'phone': _phoneController.text,
@@ -55,14 +73,41 @@ class _LawyersPageState extends State<LawyersPage> {
           'state': _stateController.text,
         }),
       );
-    
-    if (response.statusCode == 200) {
-      SnackBar snackBar = SnackBar(content: Text('Data entered successfully'));
-      ScaffoldMessenger.of(context).showSnackBar(snackBar);
-      Navigator.pop(context);
-    }else{
-      SnackBar snackBar = SnackBar(content: Text('Failed to enter data'));
-      ScaffoldMessenger.of(context).showSnackBar(snackBar);
+      
+      setState(() {
+        _isLoading = false;
+      });
+      
+      if (response.statusCode == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Profile updated successfully'),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+          )
+        );
+        Navigator.pop(context);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to update profile: ${response.statusCode}'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          )
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: $e'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        )
+      );
     }
   }
 
@@ -70,77 +115,322 @@ class _LawyersPageState extends State<LawyersPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Lawyers Page"),
-        backgroundColor: Colors.indigo,
+        title: const Text("Lawyer Profile"),
+        backgroundColor: Theme.of(context).primaryColor,
+        elevation: 0,
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildTextField(_specialityController, "Speciality"),
-              _buildTextField(_experienceController, "Experience (in years)"),
-              _buildTextField(_phoneController, "Phone Number"),
-              _buildTextField(_cityController, "City"),
-              _buildTextField(_districtController, "District"),
-              _buildTextField(_stateController, "State"),
-              const SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: _submitForm,
-                child: const Text("Submit"),
-              ),
-            ],
+      body: Stack(
+        children: [
+          // Background decoration
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: Container(
+              height: 100,
+              color: Theme.of(context).primaryColor,
+            ),
           ),
+          
+          // Form content
+          SafeArea(
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Card(
+                  elevation: 4,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(24.0),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Header
+                          Center(
+                            child: Column(
+                              children: [
+                                Icon(
+                                  Icons.gavel,
+                                  size: 48,
+                                  color: Theme.of(context).primaryColor,
+                                ),
+                                SizedBox(height: 16),
+                                Text(
+                                  "Complete Your Lawyer Profile",
+                                  style: TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                SizedBox(height: 8),
+                                Text(
+                                  "Please provide your professional details",
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.grey[600],
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
+                            ),
+                          ),
+                          SizedBox(height: 30),
+                          
+                          // Form fields
+                          _buildSectionHeader("Professional Information"),
+                          _buildValidatedTextField(
+                            _specialityController, 
+                            "Speciality",
+                            "E.g., Criminal Law, Family Law",
+                            Icons.work_outline,
+                            (value) => value == null || value.isEmpty 
+                              ? 'Please enter your speciality' 
+                              : null,
+                          ),
+                          _buildValidatedTextField(
+                            _experienceController, 
+                            "Experience (in years)",
+                            "E.g., 5",
+                            Icons.timeline,
+                            (value) {
+                              if (value == null || value.isEmpty) {
+                                return 'Please enter your years of experience';
+                              }
+                              if (int.tryParse(value) == null) {
+                                return 'Please enter a valid number';
+                              }
+                              return null;
+                            },
+                            keyboardType: TextInputType.number,
+                          ),
+                          SizedBox(height: 24),
+                          
+                          _buildSectionHeader("Contact Information"),
+                          _buildValidatedTextField(
+                            _phoneController, 
+                            "Phone Number",
+                            "E.g., 9876543210",
+                            Icons.phone_outlined,
+                            (value) {
+                              if (value == null || value.isEmpty) {
+                                return 'Please enter your phone number';
+                              }
+                              if (value.length < 10) {
+                                return 'Please enter a valid phone number';
+                              }
+                              return null;
+                            },
+                            keyboardType: TextInputType.phone,
+                          ),
+                          SizedBox(height: 24),
+                          
+                          _buildSectionHeader("Location"),
+                          _buildValidatedTextField(
+                            _cityController, 
+                            "City",
+                            "E.g., Mumbai",
+                            Icons.location_city_outlined,
+                            (value) => value == null || value.isEmpty 
+                              ? 'Please enter your city' 
+                              : null,
+                          ),
+                          _buildValidatedTextField(
+                            _districtController, 
+                            "District",
+                            "E.g., Mumbai Suburban",
+                            Icons.map_outlined,
+                            (value) => value == null || value.isEmpty 
+                              ? 'Please enter your district' 
+                              : null,
+                          ),
+                          _buildValidatedTextField(
+                            _stateController, 
+                            "State",
+                            "E.g., Maharashtra",
+                            Icons.place_outlined,
+                            (value) => value == null || value.isEmpty 
+                              ? 'Please enter your state' 
+                              : null,
+                          ),
+                          SizedBox(height: 30),
+                          
+                          // Submit button
+                          SizedBox(
+                            width: double.infinity,
+                            height: 50,
+                            child: ElevatedButton(
+                              onPressed: _isLoading ? null : () => _submitForm(),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Theme.of(context).primaryColor,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                              child: _isLoading
+                                ? Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                      SizedBox(width: 12),
+                                      Text("Saving..."),
+                                    ],
+                                  )
+                                : Text(
+                                    "Save Profile",
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                            ),
+                          ),
+                          SizedBox(height: 16),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16.0),
+      child: Text(
+        title,
+        style: TextStyle(
+          fontWeight: FontWeight.bold,
+          fontSize: 16,
+          color: Colors.grey[800],
         ),
       ),
     );
   }
 
-  // Helper method to create a TextField with a label
-  Widget _buildTextField(TextEditingController controller, String label) {
+  // Enhanced TextField with validation and icons
+  Widget _buildValidatedTextField(
+    TextEditingController controller,
+    String label,
+    String hint,
+    IconData icon,
+    String? Function(String?)? validator, {
+    TextInputType keyboardType = TextInputType.text,
+  }) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
-      child: TextField(
+      padding: const EdgeInsets.only(bottom: 16.0),
+      child: TextFormField(
         controller: controller,
         decoration: InputDecoration(
           labelText: label,
-          border: OutlineInputBorder(),
+          hintText: hint,
+          prefixIcon: Icon(icon),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: Colors.grey[300]!),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: Colors.grey[300]!),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: Theme.of(context).primaryColor, width: 2),
+          ),
+          filled: true,
+          fillColor: Colors.grey[50],
+          contentPadding: EdgeInsets.symmetric(vertical: 16),
         ),
-        keyboardType: label == "Phone Number" || label == "Experience (in years)"
-            ? TextInputType.number
-            : TextInputType.text,
+        keyboardType: keyboardType,
+        validator: validator,
       ),
     );
   }
 
-  // Method to handle form submission
+  // Method to handle form submission with confirmation
   void _submitForm() {
-    // Collecting the form data
-    String speciality = _specialityController.text;
-    String experience = _experienceController.text;
-    String phone = _phoneController.text;
-    String city = _cityController.text;
-    String district = _districtController.text;
-    String state = _stateController.text;
-
-    // Displaying the collected data (You can replace this with your backend logic)
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Form Data"),
-        content: Text(
-          "Speciality: $speciality\n"
-          "Experience: $experience\n"
-          "Phone: $phone\n"
-          "City: $city\n"
-          "District: $district\n"
-          "State: $state",
+    if (_formKey.currentState!.validate()) {
+      // Show confirmation dialog
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text("Confirm Information"),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text("Please verify your information before submitting:"),
+                SizedBox(height: 16),
+                _buildInfoRow("Speciality", _specialityController.text),
+                _buildInfoRow("Experience", "${_experienceController.text} years"),
+                _buildInfoRow("Phone", _phoneController.text),
+                _buildInfoRow("City", _cityController.text),
+                _buildInfoRow("District", _districtController.text),
+                _buildInfoRow("State", _stateController.text),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.grey[800],
+              ),
+              child: const Text("EDIT"),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context);
+                initiateDataEntry();
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Theme.of(context).primaryColor,
+              ),
+              child: const Text("CONFIRM"),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: initiateDataEntry,
-            child: const Text("OK"),
+      );
+    }
+  }
+
+  Widget _buildInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            "$label: ",
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: Colors.grey[700],
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                color: Colors.black87,
+              ),
+            ),
           ),
         ],
       ),

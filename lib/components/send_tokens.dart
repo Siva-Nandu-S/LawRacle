@@ -44,10 +44,8 @@ class SendTokensPage extends StatelessWidget {
                 String recipient = recipientController.text;
                 double amount = double.parse(amountController.text);
                 BigInt bigIntValue = BigInt.from(amount * pow(10, 18));
-                print(bigIntValue);
                 EtherAmount ethAmount =
                     EtherAmount.fromBigInt(EtherUnit.wei, bigIntValue);
-                print(ethAmount);
                 // Convert the amount to EtherAmount
                 sendTransaction(recipient, ethAmount);
               },
@@ -70,7 +68,6 @@ class SendTokensPage extends StatelessWidget {
     EtherAmount etherAmount = await ethClient.getBalance(credentials.address);
     EtherAmount gasPrice = await ethClient.getGasPrice();
 
-    print(etherAmount);
 
     await ethClient.sendTransaction(
       credentials,

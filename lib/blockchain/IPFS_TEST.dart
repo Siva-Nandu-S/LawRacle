@@ -60,14 +60,11 @@ class _PinataUploadPageState extends State<PinataUploadPage> {
               // Open the uploaded file in the browser
               _launchInBrowser(_uploadedFileUrl!);
             } else {
-              print("Error: IpfsHash not found in response.");
               setState(() {
                 _isUploading = false;
               });
             }
           } else {
-            print("Upload failed with status: ${response.statusCode}");
-            print("Response: ${responseData.body}");
             setState(() {
               _isUploading = false;
             });
@@ -77,10 +74,10 @@ class _PinataUploadPageState extends State<PinataUploadPage> {
         setState(() {
           _isUploading = false;
         });
-        print("File upload error: $e");
       }
     } else {
-      print("Storage permission denied.");
+      // Handle the case when permission is denied
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Permission denied')));
     }
   }
 
@@ -90,7 +87,7 @@ class _PinataUploadPageState extends State<PinataUploadPage> {
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri);
     } else {
-      print('Could not launch $url'); // Improved error handling
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not launch $url')));
     }
   }
 

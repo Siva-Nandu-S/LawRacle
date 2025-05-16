@@ -11,12 +11,15 @@ import 'package:http/http.dart' as http;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:web3dart/src/credentials/address.dart';
+import 'package:article_21/blockchain/upload_to_blockchain.dart';
 
 class PinataUploadPage extends StatefulWidget {
-  final String lawyerPublicKeyHex;
+  final EthereumAddress lawyerWalletAddress;
   final String lawyerEmail;
 
-  const PinataUploadPage({key, required this.lawyerPublicKeyHex, required this.lawyerEmail})
+  const PinataUploadPage(
+      {key, required this.lawyerWalletAddress, required this.lawyerEmail})
       : super(key: key);
 
   @override
@@ -41,16 +44,23 @@ class _PinataUploadPageState extends State<PinataUploadPage> {
   // Replace with your Pinata JWT
   final String? _pinataJwt = dotenv
       .env['PINATA_JWT']; // Make sure to replace this with your actual JWT.
-  
+
   final String? _serverUrl = dotenv.env['SERVER_URL'];
 
   Future<void> _pickFileAndUpload() async {
     // Request permission for external storage
-    var status = await Permission.storage.request();
+    Map<Permission, PermissionStatus> statuses = await [
+    Permission.storage,
+    Permission.photos,
+    Permission.videos,
+  ].request();
 
-    if (status.isGranted) {
+  // Check if any of the permissions are granted
+  bool hasPermission = statuses[Permission.storage] == PermissionStatus.granted || 
+                       statuses[Permission.photos] == PermissionStatus.granted;
+
+    if (hasPermission) {
       try {
-        // Step 1: Pick the file
         FilePickerResult? result = await FilePicker.platform.pickFiles();
         if (result != null && result.files.single.path != null) {
           File file = File(result.files.single.path!);
@@ -59,63 +69,42 @@ class _PinataUploadPageState extends State<PinataUploadPage> {
             _isUploading = true;
           });
 
-          print('public key: ${widget.lawyerPublicKeyHex}');
-          print('length of public key: ${widget.lawyerPublicKeyHex.length}');
 
           // String _PEMLawyerPublicKey =
-          //     convertPublicKeyToPEM(widget.lawyerPublicKeyHex);
+          //     convertPublicKeyToPEM(widget.lawyerWalletAddress);
 
-          // Step 2: Encrypt the file before uploading
           Map<String, dynamic> encryptedData =
-              await encryptFileWithAccessControl(
+              await EncryptionService.encryptFileWithAccessControl(
             file,
-            widget.lawyerPublicKeyHex,
+            widget.lawyerWalletAddress,
           );
-          print(widget.lawyerPublicKeyHex);
 
-          String encryptedFileBase64 = encryptedData['encryptedFile'];
-          Uint8List encryptedFileBytes = base64Decode(encryptedFileBase64); // Decode Base64 to Uint8List
-          String encryptedAESKey = encryptedData['encryptedAESKey']; // Assuming this is already Base64
-          final iv = encryptedData['iv'];
+          String encryptedFile = encryptedData['encryptedFilePath'];
 
-          // Save the encrypted file temporarily
-          String tempPath = '${file.path}_encrypted';
-          File encryptedFile = await File(tempPath).writeAsBytes(encryptedFileBytes);
 
-          print('Encrypted file saved at: $tempPath');
-
-          // Step 3: Upload the encrypted file to IPFS
           String url = "https://api.pinata.cloud/pinning/pinFileToIPFS";
           var request = http.MultipartRequest('POST', Uri.parse(url));
 
-          // Adding headers
           request.headers['Authorization'] = 'Bearer $_pinataJwt';
 
-          // Adding the encrypted file to the request
           request.files.add(
-              await http.MultipartFile.fromPath('file', encryptedFile.path));
+              await http.MultipartFile.fromPath('file', encryptedFile));
 
           var response = await request.send();
           var responseData = await http.Response.fromStream(response);
 
-          // Check if the response is successful
           if (response.statusCode == 200) {
             var jsonResponse = jsonDecode(responseData.body);
 
-            // Step 4: Check if the IpfsHash exists in the response
             if (jsonResponse.containsKey('IpfsHash')) {
               String ipfsHash = jsonResponse['IpfsHash'];
 
-              await serverCaching(
-                  widget.lawyerEmail, widget.lawyerPublicKeyHex, ipfsHash, _serverUrl!, encryptedAESKey, iv);
 
-              // Step 5: Encrypt the IPFS hash with the lawyer's public key
-              // String encryptedIpfsHash = await encryptWithPublicKey(
-              //     ipfsHash, widget.lawyerPublicKeyPem);
+              // await serverCaching(
+              //     widget.lawyerEmail, widget.lawyerWalletAddress as String, ipfsHash, _serverUrl!, encryptedAESKey, iv);
 
-              // Step 6: Upload the encrypted AES key and encrypted IPFS hash to the blockchain
-              await uploadToBlockchain(
-                  ipfsHash, encryptedAESKey, widget.lawyerPublicKeyHex);
+              await uploadToBlockchain(context, ipfsHash,
+                  widget.lawyerWalletAddress);
 
               setState(() {
                 _uploadedFileUrl = ipfsHash;
@@ -127,15 +116,12 @@ class _PinataUploadPageState extends State<PinataUploadPage> {
                   MaterialPageRoute(builder: (context) => Article21()));
             }
           } else {
-            print('Failed to upload file to IPFS: ${responseData.body}');
             setState(() {
               _isUploading = false;
             });
           }
         }
       } catch (e) {
-        print('Error: $e');
-        print('I am over here');
         setState(() {
           _isUploading = false;
         });
@@ -175,9 +161,8 @@ class _PinataUploadPageState extends State<PinataUploadPage> {
   }
 }
 
-serverCaching(String lawyerEmail, String lawyerPublicKeyHex, String ipfsHash, String _serverUrl, String encryptedAESKey, IV iv) async {
-
-
+serverCaching(String lawyerEmail, String lawyerWalletAddress, String ipfsHash,
+    String _serverUrl, String encryptedAESKey, IV iv) async {
   try {
     final response = await http.post(
       Uri.parse('$_serverUrl/cacheFiles'),
@@ -186,7 +171,7 @@ serverCaching(String lawyerEmail, String lawyerPublicKeyHex, String ipfsHash, St
       },
       body: jsonEncode(<String, String>{
         'lawyerEmail': lawyerEmail,
-        'lawyerPublicKey': lawyerPublicKeyHex,
+        'lawyerPublicKey': lawyerWalletAddress,
         'ipfsHash': ipfsHash,
         'encryptedAESKey': encryptedAESKey,
         'iv': iv.base64,
@@ -194,13 +179,10 @@ serverCaching(String lawyerEmail, String lawyerPublicKeyHex, String ipfsHash, St
     );
 
     if (response.statusCode == 200) {
-      print('Successfully cached data');
     } else {
       throw Exception('Failed to cache data');
     }
   } catch (e) {
-    print('Error: $e');
     throw Exception('Error: $e');
   }
-
 }

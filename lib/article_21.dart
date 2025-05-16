@@ -53,17 +53,18 @@ class _Article21State extends State<Article21> {
     return WillPopScope(
       onWillPop: _onWillPop, // Add the no-going-back logic here
       child: Scaffold(
-        appBar: AppBar(
-          title: const Text(
-            "LAWRacle",
-            style: TextStyle(
-              fontSize: 24,
-              color: Color.fromRGBO(251, 251, 251, 0.906),
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          backgroundColor: Colors.indigo,
-        ),
+        // appBar: AppBar(
+        //   automaticallyImplyLeading: false,
+        //   title: const Text(
+        //     "LAWRacle",
+        //     style: TextStyle(
+        //       fontSize: 24,
+        //       color: Color.fromRGBO(251, 251, 251, 0.906),
+        //       fontWeight: FontWeight.bold,
+        //     ),
+        //   ),
+        //   backgroundColor: Colors.indigo,
+        // ),
         body: FutureBuilder<void>(
           future: _initializationFuture,
           builder: (context, snapshot) {
